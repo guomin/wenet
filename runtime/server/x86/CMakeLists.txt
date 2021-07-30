@@ -137,6 +137,7 @@ add_subdirectory(kaldi)
 
 # decoder
 add_library(decoder STATIC
+  decoder/context_graph.cc
   decoder/ctc_prefix_beam_search.cc
   decoder/ctc_wfst_beam_search.cc
   decoder/ctc_endpoint.cc
@@ -155,7 +156,6 @@ add_library(websocket STATIC
   websocket/websocket_server.cc
 )
 target_link_libraries(websocket PUBLIC decoder frontend)
-
 
 # binary
 add_executable(decoder_main bin/decoder_main.cc)
