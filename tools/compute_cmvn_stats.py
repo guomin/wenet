@@ -18,6 +18,7 @@ torchaudio.set_audio_backend("sox_io")
 class CollateFunc(object):
     ''' Collate function for AudioDataset
     '''
+
     def __init__(self, feat_dim, resample_rate):
         self.feat_dim = feat_dim
         self.resample_rate = resample_rate
@@ -91,14 +92,16 @@ if __name__ == '__main__':
                         default='global_cmvn',
                         help='global cmvn file')
 
+    doc = "Print log after every log_interval audios are processed."
+    parser.add_argument("--log_interval", type=int, default=1000, help=doc)
     args = parser.parse_args()
 
     with open(args.train_config, 'r') as fin:
         configs = yaml.load(fin, Loader=yaml.FullLoader)
-    feat_dim = configs['collate_conf']['feature_extraction_conf']['mel_bins']
+    feat_dim = configs['dataset_conf']['fbank_conf']['num_mel_bins']
     resample_rate = 0
-    if 'resample' in configs['collate_conf']['feature_extraction_conf']:
-        resample_rate = configs['collate_conf']['feature_extraction_conf']['resample']
+    if 'resample_conf' in configs['dataset_conf']:
+        resample_rate = configs['dataset_conf']['resample_conf']['resample_rate']
         print('using resample and new sample rate is {}'.format(resample_rate))
 
     collate_func = CollateFunc(feat_dim, resample_rate)
@@ -122,7 +125,8 @@ if __name__ == '__main__':
             all_var_stat += var_stat
             all_number += number
             wav_number += batch_size
-            if wav_number % 1000 == 0:
+
+            if wav_number % args.log_interval == 0:
                 print(f'processed {wav_number} wavs, {all_number} frames',
                       file=sys.stderr,
                       flush=True)

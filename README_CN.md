@@ -3,13 +3,14 @@
 [**English version**](https://github.com/wenet-e2e/wenet/tree/main/README.md)
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-brightgreen.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Python-Version](https://img.shields.io/badge/Python-3.7%7C3.8-brightgreen)](https://github.com/mobvoi/wenet)
+[![Python-Version](https://img.shields.io/badge/Python-3.7%7C3.8-brightgreen)](https://github.com/wenet-e2e/wenet)
 
 [**文档**](https://wenet-e2e.github.io/wenet/)
-| [**训练模型教程**](https://wenet-e2e.github.io/wenet/tutorial.html)
+| [**训练模型教程 1**](https://wenet.org.cn/wenet/tutorial_librispeech.html)
+| [**训练模型教程 2**](https://wenet.org.cn/wenet/tutorial_aishell.html)
 | [**WeNet 论文**](https://wenet-e2e.github.io/wenet/papers.html)
-| [**x86 识别服务**](https://github.com/mobvoi/wenet/tree/main/runtime/server/x86)
-| [**android 本地识别**](https://github.com/mobvoi/wenet/tree/main/runtime/device/android/wenet)
+| [**x86 识别服务**](https://github.com/wenet-e2e/wenet/tree/main/runtime/libtorch)
+| [**android 本地识别**](https://github.com/wenet-e2e/wenet/tree/main/runtime/android)
 
 
 
@@ -31,15 +32,15 @@ WeNet 是一款面向工业落地应用的语音识别工具包，提供了从�
 下载官方提供的预训练模型，并启动 docker 服务，加载模型，提供 websocket 协议的语音识别服务。
 
 ``` sh
-wget http://mobvoi-speech-public.ufile.ucloud.cn/public/wenet/aishell2/20210602_unified_transformer_server.tar.gz
-tar -xf 20210602_unified_transformer_server.tar.gz
-model_dir=$PWD/20210602_unified_transformer_server
-docker run --rm -it -p 10086:10086 -v $model_dir:/home/wenet/model mobvoiwenet/wenet:mini bash /home/run.sh
+wget https://wenet-1256283475.cos.ap-shanghai.myqcloud.com/models/aishell2/20210618_u2pp_conformer_libtorch.tar.gz
+tar -xf 20210618_u2pp_conformer_libtorch.tar.gz
+model_dir=$PWD/20210618_u2pp_conformer_libtorch
+docker run --rm -it -p 10086:10086 -v $model_dir:/home/wenet/model wenetorg/wenet-mini:latest bash /home/run.sh
 ```
 
 **实时识别**
 
-使用浏览器打开文件`wenet/runtime/server/x86/web/templates/index.html`，在 `WebSocket URL` 中填入 `ws://127.0.0.1:10086`, 允许浏览器弹出的请求使用麦克风，即可通过麦克风进行实时语音识别。
+使用浏览器打开文件`wenet/runtime/libtorch/web/templates/index.html`，在 `WebSocket URL` 中填入 `ws://127.0.0.1:10086` (若在windows下通过wsl2运行docker,  则使用`ws://localhost:10086`) , 允许浏览器弹出的请求使用麦克风，即可通过麦克风进行实时语音识别。
 
 ![Runtime web](/docs/images/runtime_web.png)
 
@@ -53,19 +54,13 @@ git clone https://github.com/wenet-e2e/wenet.git
 ```
 
 - 安装 Conda:  https://docs.conda.io/en/latest/miniconda.html
-- 创建 Conda 环境: (推荐**PyTorch 1.6.0**. 在2080 Ti上使用1.7.0会有NCCL的问题)
+- 创建 Conda 环境:
 
 ``` sh
 conda create -n wenet python=3.8
 conda activate wenet
 pip install -r requirements.txt
-conda install pytorch==1.6.0 cudatoolkit=10.1 torchaudio=0.6.0 -c pytorch
-
-# GPU 3090
-conda create -n wenet python=3.8
-conda activate wenet
-pip install -r requirements.txt
-conda install pytorch torchvision torchaudio=0.8.0 cudatoolkit=11.1 -c pytorch -c conda-forge
+conda install pytorch=1.10.0 torchvision torchaudio=0.10.0 cudatoolkit=11.1 -c pytorch -c conda-forge
 ```
 
 **训练模型**
@@ -76,21 +71,21 @@ cd examples/aishell/s0/
 bash run.sh --stage -1
 ```
 
-细节请阅读 [**训练模型教程**](https://wenet-e2e.github.io/wenet/tutorial.html)
+细节请阅读 [**训练模型教程**](https://wenet-e2e.github.io/wenet/tutorial_aishell.html)
 
 
-## WeNet 性能
+### 新手常见问题
 
-WeNet 提供了一些开源数据集的脚本，具体的模型性能如下，注意**其中提供的预训练模型为 pytorch 训练时使用的模型，并非 runtime 模型**。runtime 模型需要进行导出操作。
-* [AIShell-1](examples/aishell/s0/README.md) 中文模型。
-* [AIShell-2](examples/aishell2/s0/README.md) 中文模型。
-* [LibriSpeech](examples/librispeech/s0/README.md) 英文模型。
-* [Multi-Chinese](examples/multi_cn/s0/README.md) 使用所有开源中文数据集训练的中文模型。
+1. 请使用具有gpu的机器。确保cuda和torch都已经安装。wenet也支持cpu训练，但是速度非常很慢。
+2. 请使用支持bash的环境。windows的默认cmd是不支持bash的。
+3. run.sh脚本里，`export CUDA_VISIBLE_DEVICES="0,1,2,3,4,5,6,7"`, 改为自己要用的GPU id，比如你的机器有4张GPU卡，4张卡都用来训练，改为 `export CUDA_VISIBLE_DEVICES="0,1,2,3"`
+4. run.sh脚本里，`data=/export/data/asr-data/OpenSLR/33/`设置为自己的目录。请使用绝对路径而不要用相对路径。
+5. 如果继续训练出错，请先删除实验目录下的 ddp_init文件再试一试。
 
 
 ## 技术支持
 
-欢迎在 [Github Issues](https://github.com/mobvoi/wenet/issues) 中提交问题。
+欢迎在 [Github Issues](https://github.com/wenet-e2e/wenet/issues) 中提交问题。
 
 欢迎扫二维码加入微信讨论群，如果群人数较多，请添加右侧个人微信入群。
 
@@ -101,6 +96,7 @@ WeNet 提供了一些开源数据集的脚本，具体的模型性能如下，�
 
 | <a href="https://www.chumenwenwen.com" target="_blank"><img src="https://raw.githubusercontent.com/wenet-e2e/wenet-contributors/main/companies/chumenwenwen.png" width="250px"></a> | <a href="http://lxie.npu-aslp.org" target="_blank"><img src="https://raw.githubusercontent.com/wenet-e2e/wenet-contributors/main/colleges/nwpu.png" width="250px"></a> | <a href="http://www.aishelltech.com" target="_blank"><img src="https://raw.githubusercontent.com/wenet-e2e/wenet-contributors/main/companies/aishelltech.png" width="250px"></a> | <a href="http://www.ximalaya.com" target="_blank"><img src="https://raw.githubusercontent.com/wenet-e2e/wenet-contributors/main/companies/ximalaya.png" width="250px"></a> | <a href="https://www.jd.com" target="_blank"><img src="https://raw.githubusercontent.com/wenet-e2e/wenet-contributors/main/companies/jd.jpeg" width="250px"></a> |
 | ---- | ---- | ---- | ---- | ---- |
+| <a href="https://horizon.ai" target="_blank"><img src="https://raw.githubusercontent.com/wenet-e2e/wenet-contributors/main/companies/hobot.png" width="250px"></a> | <a href="https://thuhcsi.github.io" target="_blank"><img src="https://raw.githubusercontent.com/wenet-e2e/wenet-contributors/main/colleges/thu.png" width="250px"></a> | <a href="https://www.nvidia.com/en-us" target="_blank"><img src="https://raw.githubusercontent.com/wenet-e2e/wenet-contributors/main/companies/nvidia.png" width="250px"></a> | | | |
 
 ## 致谢
 
@@ -119,7 +115,7 @@ WeNet 借鉴了一些优秀的开源项目，包括
   author={Yao, Zhuoyuan and Wu, Di and Wang, Xiong and Zhang, Binbin and Yu, Fan and Yang, Chao and Peng, Zhendong and Chen, Xiaoyu and Xie, Lei and Lei, Xin},
   booktitle={Proc. Interspeech},
   year={2021},
-  address={Brno, Czech Republic }
+  address={Brno, Czech Republic },
   organization={IEEE}
 }
 

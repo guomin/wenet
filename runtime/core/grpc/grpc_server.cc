@@ -25,34 +25,30 @@ GrpcConnectionHandler::GrpcConnectionHandler(
     std::shared_ptr<Request> request, std::shared_ptr<Response> response,
     std::shared_ptr<FeaturePipelineConfig> feature_config,
     std::shared_ptr<DecodeOptions> decode_config,
-    std::shared_ptr<fst::SymbolTable> symbol_table,
-    std::shared_ptr<TorchAsrModel> model,
-    std::shared_ptr<fst::Fst<fst::StdArc>> fst)
+    std::shared_ptr<DecodeResource> decode_resource)
     : stream_(std::move(stream)),
       request_(std::move(request)),
       response_(std::move(response)),
       feature_config_(std::move(feature_config)),
       decode_config_(std::move(decode_config)),
-      symbol_table_(std::move(symbol_table)),
-      model_(std::move(model)),
-      fst_(std::move(fst)) {}
+      decode_resource_(std::move(decode_resource)) {}
 
 void GrpcConnectionHandler::OnSpeechStart() {
-  LOG(INFO) << "Recieved speech start signal, start reading speech";
+  LOG(INFO) << "Received speech start signal, start reading speech";
   got_start_tag_ = true;
   response_->set_status(Response::ok);
   response_->set_type(Response::server_ready);
   stream_->Write(*response_);
   feature_pipeline_ = std::make_shared<FeaturePipeline>(*feature_config_);
-  decoder_ = std::make_shared<TorchAsrDecoder>(
-      feature_pipeline_, model_, symbol_table_, *decode_config_, fst_);
+  decoder_ = std::make_shared<AsrDecoder>(feature_pipeline_, decode_resource_,
+                                          *decode_config_);
   // Start decoder thread
   decode_thread_ = std::make_shared<std::thread>(
       &GrpcConnectionHandler::DecodeThreadFunc, this);
 }
 
 void GrpcConnectionHandler::OnSpeechEnd() {
-  LOG(INFO) << "Recieved speech end signal";
+  LOG(INFO) << "Received speech end signal";
   CHECK(feature_pipeline_ != nullptr);
   feature_pipeline_->set_input_finished();
   got_end_tag_ = true;
@@ -81,18 +77,13 @@ void GrpcConnectionHandler::OnFinish() {
 
 void GrpcConnectionHandler::OnSpeechData() {
   // Read binary PCM data
-  const int16_t* pdata =
+  const int16_t* pcm_data =
       reinterpret_cast<const int16_t*>(request_->audio_data().c_str());
   int num_samples = request_->audio_data().length() / sizeof(int16_t);
-  std::vector<float> pcm_data(num_samples);
-  for (int i = 0; i < num_samples; i++) {
-    pcm_data[i] = static_cast<float>(*pdata);
-    pdata++;
-  }
-  VLOG(2) << "Recieved " << num_samples << " samples";
+  VLOG(2) << "Received " << num_samples << " samples";
   CHECK(feature_pipeline_ != nullptr);
   CHECK(decoder_ != nullptr);
-  feature_pipeline_->AcceptWaveform(pcm_data);
+  feature_pipeline_->AcceptWaveform(pcm_data, num_samples);
 }
 
 void GrpcConnectionHandler::SerializeResult(bool finish) {
@@ -131,7 +122,7 @@ void GrpcConnectionHandler::DecodeThreadFunc() {
       decoder_->Rescoring();
       SerializeResult(true);
       OnFinalResult();
-      // If it's not continuous decoidng, continue to do next recognition
+      // If it's not continuous decoding, continue to do next recognition
       // otherwise stop the recognition
       if (continuous_decoding_) {
         decoder_->ResetContinuousDecoding();
@@ -177,7 +168,7 @@ Status GrpcServer::Recognize(ServerContext* context,
   auto request = std::make_shared<Request>();
   auto response = std::make_shared<Response>();
   GrpcConnectionHandler handler(stream, request, response, feature_config_,
-                                decode_config_, symbol_table_, model_, fst_);
+                                decode_config_, decode_resource_);
   std::thread t(std::move(handler));
   t.join();
   return Status::OK;

@@ -24,7 +24,7 @@
 namespace wenet {
 
 void SplitString(const std::string& str, std::vector<std::string>* strs) {
-  SplitStringToVector(str, " \t", true, strs);
+  SplitStringToVector(Trim(str), " \t", true, strs);
 }
 
 void SplitStringToVector(const std::string& full, const char* delim,
@@ -41,151 +41,155 @@ void SplitStringToVector(const std::string& full, const char* delim,
   }
 }
 
-std::string UTF8CodeToUTF8String(int code) {
-  std::ostringstream ostr;
-  if (code < 0) {
-    LOG(ERROR) << "LabelsToUTF8String: Invalid character found: " << code;
-    return ostr.str();
-  } else if (code < 0x80) {
-    ostr << static_cast<char>(code);
-  } else if (code < 0x800) {
-    ostr << static_cast<char>((code >> 6) | 0xc0);
-    ostr << static_cast<char>((code & 0x3f) | 0x80);
-  } else if (code < 0x10000) {
-    ostr << static_cast<char>((code >> 12) | 0xe0);
-    ostr << static_cast<char>(((code >> 6) & 0x3f) | 0x80);
-    ostr << static_cast<char>((code & 0x3f) | 0x80);
-  } else if (code < 0x200000) {
-    ostr << static_cast<char>((code >> 18) | 0xf0);
-    ostr << static_cast<char>(((code >> 12) & 0x3f) | 0x80);
-    ostr << static_cast<char>(((code >> 6) & 0x3f) | 0x80);
-    ostr << static_cast<char>((code & 0x3f) | 0x80);
-  } else if (code < 0x4000000) {
-    ostr << static_cast<char>((code >> 24) | 0xf8);
-    ostr << static_cast<char>(((code >> 18) & 0x3f) | 0x80);
-    ostr << static_cast<char>(((code >> 12) & 0x3f) | 0x80);
-    ostr << static_cast<char>(((code >> 6) & 0x3f) | 0x80);
-    ostr << static_cast<char>((code & 0x3f) | 0x80);
-  } else {
-    ostr << static_cast<char>((code >> 30) | 0xfc);
-    ostr << static_cast<char>(((code >> 24) & 0x3f) | 0x80);
-    ostr << static_cast<char>(((code >> 18) & 0x3f) | 0x80);
-    ostr << static_cast<char>(((code >> 12) & 0x3f) | 0x80);
-    ostr << static_cast<char>(((code >> 6) & 0x3f) | 0x80);
-    ostr << static_cast<char>((code & 0x3f) | 0x80);
-  }
-  return ostr.str();
-}
-
-// Split utf8 string into characters.
-bool SplitUTF8String(const std::string& str,
-                     std::vector<std::string>* characters) {
-  const char* data = str.data();
-  const size_t length = str.size();
-  for (size_t i = 0; i < length; /* no update */) {
-    int c = data[i++] & 0xff;
-    if ((c & 0x80) == 0) {
-      characters->push_back(UTF8CodeToUTF8String(c));
-    } else {
-      if ((c & 0xc0) == 0x80) {
-        LOG(ERROR) << "UTF8StringToLabels: continuation byte as lead byte";
-        return false;
-      }
-      int count =
-          (c >= 0xc0) + (c >= 0xe0) + (c >= 0xf0) + (c >= 0xf8) + (c >= 0xfc);
-      int code = c & ((1 << (6 - count)) - 1);
-      while (count != 0) {
-        if (i == length) {
-          LOG(ERROR) << "UTF8StringToLabels: truncated utf-8 byte sequence";
-          return false;
-        }
-        char cb = data[i++];
-        if ((cb & 0xc0) != 0x80) {
-          LOG(ERROR) << "UTF8StringToLabels: missing/invalid continuation byte";
-          return false;
-        }
-        code = (code << 6) | (cb & 0x3f);
-        count--;
-      }
-      if (code < 0) {
-        // This should not be able to happen.
-        LOG(ERROR) << "UTF8StringToLabels: Invalid character found: " << c;
-        return false;
-      }
-      characters->push_back(UTF8CodeToUTF8String(code));
-    }
-  }
-  return true;
-}
-
-std::string ProcessBlank(const std::string& str) {
-  std::string result;
-  if (!str.empty()) {
-    std::vector<std::string> characters;
-    if (SplitUTF8String(str, &characters)) {
-      for (std::string& character : characters) {
-        if (character != kSpaceSymbol) {
-          result.append(character);
-        } else {
-          // Ignore consecutive space or located in head
-          if (!result.empty() && result.back() != ' ') {
-            result.push_back(' ');
-          }
-        }
-      }
-      // Ignore tailing space
-      if (!result.empty() && result.back() == ' ') {
-        result.pop_back();
-      }
-      for (size_t i = 0; i < result.size(); ++i) {
-        result[i] = tolower(result[i]);
-      }
-    }
-  }
-  return result;
-}
-
-void SplitEachChar(const std::string& word, std::vector<std::string>* chars) {
+void SplitUTF8StringToChars(const std::string& str,
+                            std::vector<std::string>* chars) {
   chars->clear();
-  size_t i = 0;
-  while (i < word.length()) {
-    assert((word[i] & 0xF8) <= 0xF0);
-    int bytes_ = 1;
-    if ((word[i] & 0x80) == 0x00) {
+  int bytes = 1;
+  for (size_t i = 0; i < str.length(); i += bytes) {
+    assert((str[i] & 0xF8) <= 0xF0);
+    if ((str[i] & 0x80) == 0x00) {
       // The first 128 characters (US-ASCII) in UTF-8 format only need one byte.
-      bytes_ = 1;
-    } else if ((word[i] & 0xE0) == 0xC0) {
+      bytes = 1;
+    } else if ((str[i] & 0xE0) == 0xC0) {
       // The next 1,920 characters need two bytes to encode,
       // which covers the remainder of almost all Latin-script alphabets.
-      bytes_ = 2;
-    } else if ((word[i] & 0xF0) == 0xE0) {
+      bytes = 2;
+    } else if ((str[i] & 0xF0) == 0xE0) {
       // Three bytes are needed for characters in the rest of
       // the Basic Multilingual Plane, which contains virtually all characters
       // in common use, including most Chinese, Japanese and Korean characters.
-      bytes_ = 3;
-    } else if ((word[i] & 0xF8) == 0xF0) {
+      bytes = 3;
+    } else if ((str[i] & 0xF8) == 0xF0) {
       // Four bytes are needed for characters in the other planes of Unicode,
       // which include less common CJK characters, various historic scripts,
       // mathematical symbols, and emoji (pictographic symbols).
-      bytes_ = 4;
+      bytes = 4;
     }
-    chars->push_back(word.substr(i, bytes_));
-    i += bytes_;
+    chars->push_back(str.substr(i, bytes));
   }
-  return;
+}
+
+int UTF8StringLength(const std::string& str) {
+  int len = 0;
+  int bytes = 1;
+  for (size_t i = 0; i < str.length(); i += bytes) {
+    if ((str[i] & 0x80) == 0x00) {
+      bytes = 1;
+    } else if ((str[i] & 0xE0) == 0xC0) {
+      bytes = 2;
+    } else if ((str[i] & 0xF0) == 0xE0) {
+      bytes = 3;
+    } else if ((str[i] & 0xF8) == 0xF0) {
+      bytes = 4;
+    }
+    ++len;
+  }
+  return len;
+}
+
+bool CheckEnglishChar(const std::string& ch) {
+  // all english characters should be encoded in one byte
+  if (ch.size() != 1) return false;
+  // english words may contain apostrophe, i.e., "He's"
+  return isalpha(ch[0]) || ch[0] == '\'';
 }
 
 bool CheckEnglishWord(const std::string& word) {
   std::vector<std::string> chars;
-  SplitEachChar(word, &chars);
+  SplitUTF8StringToChars(word, &chars);
   for (size_t k = 0; k < chars.size(); k++) {
-    // all english characters should be encoded in one byte
-    if (chars[k].size() > 1) return false;
-    // english words may contain apostrophe, i.e., "He's"
-    if (chars[k][0] == '\'') continue;
-    if (!isalpha(chars[k][0])) return false;
+    if (!CheckEnglishChar(chars[k])) {
+      return false;
+    }
   }
   return true;
 }
+
+std::string JoinString(const std::string& c,
+                       const std::vector<std::string>& strs) {
+  std::string result;
+  if (strs.size() > 0) {
+    for (int i = 0; i < strs.size() - 1; i++) {
+      result += (strs[i] + c);
+    }
+    result += strs.back();
+  }
+  return result;
+}
+
+bool IsAlpha(const std::string& str) {
+  for (size_t i = 0; i < str.size(); i++) {
+    if (!isalpha(str[i])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+std::string ProcessBlank(const std::string& str, bool lowercase) {
+  std::string result;
+  if (!str.empty()) {
+    std::vector<std::string> chars;
+    SplitUTF8StringToChars(Trim(str), &chars);
+
+    for (std::string& ch : chars) {
+      if (ch != kSpaceSymbol) {
+        result.append(ch);
+      } else {
+        // Ignore consecutive space or located in head
+        if (!result.empty() && result.back() != ' ') {
+          result.push_back(' ');
+        }
+      }
+    }
+    // Ignore tailing space
+    if (!result.empty() && result.back() == ' ') {
+      result.pop_back();
+    }
+    // NOTE: convert string to wstring
+    //       see issue 745: https://github.com/wenet-e2e/wenet/issues/745
+    std::locale loc("");
+    std::wstring_convert<std::codecvt_utf8<wchar_t>, wchar_t> converter;
+    std::wstring wsresult = converter.from_bytes(result);
+    for (auto& c : wsresult) {
+      c = lowercase ? tolower(c, loc) : toupper(c, loc);
+    }
+    result = converter.to_bytes(wsresult);
+  }
+  return result;
+}
+
+std::string Ltrim(const std::string& str) {
+  size_t start = str.find_first_not_of(WHITESPACE);
+  return (start == std::string::npos) ? "" : str.substr(start);
+}
+
+std::string Rtrim(const std::string& str) {
+  size_t end = str.find_last_not_of(WHITESPACE);
+  return (end == std::string::npos) ? "" : str.substr(0, end + 1);
+}
+
+std::string Trim(const std::string& str) { return Rtrim(Ltrim(str)); }
+
+std::string JoinPath(const std::string& left, const std::string& right) {
+  std::string path(left);
+  if (path.size() && path.back() != '/') {
+    path.push_back('/');
+  }
+  path.append(right);
+  return path;
+}
+
+#ifdef _MSC_VER
+std::wstring ToWString(const std::string& str) {
+  unsigned len = str.size() * 2;
+  setlocale(LC_CTYPE, "");
+  wchar_t* p = new wchar_t[len];
+  mbstowcs(p, str.c_str(), len);
+  std::wstring wstr(p);
+  delete[] p;
+  return wstr;
+}
+#endif
 
 }  // namespace wenet
